@@ -24,6 +24,7 @@ Thumbs.db
 *.pb
 models/
 models_visual/
+logs_visual
 saved_models/
 checkpoints/
 
