@@ -23,6 +23,7 @@ Thumbs.db
 *.h5
 *.pb
 models/
+models_visual/
 saved_models/
 checkpoints/
 
