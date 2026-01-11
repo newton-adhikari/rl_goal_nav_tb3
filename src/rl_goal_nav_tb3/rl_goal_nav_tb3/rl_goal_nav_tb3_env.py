@@ -135,7 +135,7 @@ class RLGoalNavTB3Env(gym.Env, Node):
                 
         return state, {}
 
-    def setp(self, action):
+    def step(self, action):
         # Publish action
         cmd = Twist()
         cmd.linear.x = float(action[0])

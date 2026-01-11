@@ -20,7 +20,7 @@ class ROS2EnvWrapper(gym.Wrapper):
         return self.env.step(action)
     
     def reset(self, **kwargs):
-        return super().reset(**kwargs)
+        return self.env.reset(**kwargs)
     
     def close(self):
         self.env.close()
@@ -32,7 +32,7 @@ def make_env():
 
 
 def train():
-    print(f"called the method train:::")
+    print(f"::::called the method train:::")
 
     # save the training logs
     log_dir = "./logs_visual/"
