@@ -16,3 +16,17 @@ COLCON_IGNORE
 *.bak
 .DS_Store
 Thumbs.db
+# Trained models
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pb
+models/
+saved_models/
+checkpoints/
+
+# RL logs
+runs/
+logs/
+tensorboard/
