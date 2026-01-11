@@ -85,9 +85,7 @@ class RLGoalNavTB3Env(gym.Env, Node):
             rclpy.spin_once(self, timeout_sec=0.05)
             timeout += 1
 
-        print("the current goal_position is:::")
-        print(self.goal_position[0])
-        print(self.goal_position[1])
+
         dx = self.goal_position[0] - self.position[0]
         dy = self.goal_position[1] - self.position[1]
 
@@ -102,6 +100,8 @@ class RLGoalNavTB3Env(gym.Env, Node):
             self.scan_data,
             [dx * 0.2, dy * 0.2, relative_angle] # unscaled goal distance (to balances perception vs navigation)
         ]).astype(np.float32)
+
+        return state, goal_distance
 
     def reset(self, seed=None, options=None):
         # for Gymnasium API
@@ -119,6 +119,7 @@ class RLGoalNavTB3Env(gym.Env, Node):
             future = self.reset_simulation_client.call_async(request)
             rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
 
+        time.sleep(0.3) # don't remove this, beause without this intitial ovservation gets NaN after reset
 
         # Generate new goal
         self.step_count = 0
