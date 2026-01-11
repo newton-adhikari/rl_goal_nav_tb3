@@ -11,7 +11,7 @@ import math
 
 class RLGoalNavTB3Env(gym.Env, Node):
     def __init__(self):
-        super().__init__('rl_goal_nav_tb3_env::')
+        super().__init__('rl_goal_nav_tb3_env')
 
         # Environment parameters
         self.max_linear_vel = 0.22
@@ -37,6 +37,10 @@ class RLGoalNavTB3Env(gym.Env, Node):
             high=np.array([3.5] * 24 + [1.0, 1.0, np.pi]),
             dtype=np.float32
         )
+
+        # reseting simulation for each episode
+        # gazebo has to open for this to work
+        self.reset_simulation_client = self.create_client(Empty, '/reset_simulation')
 
         # action_space
         self.action_space = gym.spaces.Box(
@@ -81,6 +85,9 @@ class RLGoalNavTB3Env(gym.Env, Node):
             rclpy.spin_once(self, timeout_sec=0.05)
             timeout += 1
 
+        print("the current goal_position is:::")
+        print(self.goal_position[0])
+        print(self.goal_position[1])
         dx = self.goal_position[0] - self.position[0]
         dy = self.goal_position[1] - self.position[1]
 
