@@ -6,6 +6,10 @@ from visualization_msgs.msg import Marker
 from gazebo_msgs.srv import SpawnEntity, DeleteEntity
 from rclpy.node import Node
 import time
+import os
+import json
+from datetime import datetime
+from collections import defaultdict
 
 from rl_goal_nav_tb3.rl_goal_nav_tb3_env import RLGoalNavTB3Env
 
@@ -195,3 +199,21 @@ class EnhancedVisualMarkerPublisher(Node):
         marker.lifetime.sec = 1
         
         self.marker_pub.publish(marker)
+
+# created this for comphrensive performance analysis
+class PerformanceAnalyzer:
+    def __init__(self, save_dir="./performance_analysis"):
+        self.save_dir = save_dir
+        os.makedirs(save_dir, exist_ok=True)
+
+        # TODO: Need to record training and test videos seperately with rosbag
+        os.makedirs(os.path.join(save_dir, 'videos'), exist_ok=True)
+        os.makedirs(os.path.join(save_dir, 'attention_maps'), exist_ok=True)
+        os.makedirs(os.path.join(save_dir, 'trajectories'), exist_ok=True)
+        
+        self.episode_data = []
+        self.step_data = []
+        self.reward_components = defaultdict(list)
+        self.attention_maps = []
+        self.policy_rollouts = []
+        self.comparison_data = defaultdict(list)
