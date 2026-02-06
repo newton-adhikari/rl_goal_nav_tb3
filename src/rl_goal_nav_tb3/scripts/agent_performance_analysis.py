@@ -345,60 +345,179 @@ class PerformanceAnalyzer:
         
         plt.show()
 
-        def visualize_reward_breakdown(self, save=True):
-            # Detailed reward component analysis
-            if not self.reward_components:
-                print("No reward component data")
-                return
+    def generate_comparison_plots(self, save=True):
+        # Generate comparison plots for final report
+        df = pd.DataFrame(self.episode_data)
+        
+        fig = plt.figure(figsize=(18, 10))
+        gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+        
+        # 1. Success Rate by Episode Batch
+        ax1 = fig.add_subplot(gs[0, 0])
+        batch_size = 10
+        batches = [df[i:i+batch_size]['success'].mean() * 100 
+                  for i in range(0, len(df), batch_size)]
+        ax1.bar(range(len(batches)), batches, color='#3498db', alpha=0.7)
+        ax1.axhline(df['success'].mean() * 100, color='r', linestyle='--', 
+                   linewidth=2, label=f'Overall: {df["success"].mean()*100:.1f}%')
+        ax1.set_xlabel('Episode Batch')
+        ax1.set_ylabel('Success Rate (%)')
+        ax1.set_title('Success Rate Evolution')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3, axis='y')
+        
+        # 2. Efficiency Distribution
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.hist(df[df['success']]['efficiency'].to_numpy(), bins=20, alpha=0.7, 
+                color='green', label='Success', edgecolor='black')
+        ax2.hist(df[~df['success']]['efficiency'].to_numpy(), bins=20, alpha=0.7, 
+                color='red', label='Failure', edgecolor='black')
+        ax2.set_xlabel('Path Efficiency')
+        ax2.set_ylabel('Frequency')
+        ax2.set_title('Efficiency Distribution')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3, axis='y')
+        
+        # 3. Box plots comparison
+        ax3 = fig.add_subplot(gs[0, 2])
+        success_steps = df[df['success']]['steps'].values
+        fail_steps = df[~df['success']]['steps'].values
+        
+        box_data = [success_steps, fail_steps]
+        bp = ax3.boxplot(box_data, labels=['Success', 'Failure'],
+                        patch_artist=True,
+                        boxprops=dict(facecolor='lightblue', alpha=0.7),
+                        medianprops=dict(color='red', linewidth=2))
+        ax3.set_ylabel('Steps Taken')
+        ax3.set_title('Steps Distribution')
+        ax3.grid(True, alpha=0.3, axis='y')
+        
+        # 4. Correlation heatmap
+        ax4 = fig.add_subplot(gs[1, 0])
+        corr_cols = ['efficiency', 'steps', 'total_reward', 'path_smoothness', 'jerk']
+        corr_matrix = df[corr_cols].corr()
+        
+        im = ax4.imshow(corr_matrix, cmap='coolwarm', aspect='auto', vmin=-1, vmax=1)
+        ax4.set_xticks(range(len(corr_cols)))
+        ax4.set_yticks(range(len(corr_cols)))
+        ax4.set_xticklabels([c.replace('_', '\n') for c in corr_cols], rotation=45)
+        ax4.set_yticklabels([c.replace('_', ' ').title() for c in corr_cols])
+        ax4.set_title('Metric Correlations')
+        
+        # Add correlation values
+        for i in range(len(corr_cols)):
+            for j in range(len(corr_cols)):
+                text = ax4.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
+                              ha="center", va="center", color="black", fontsize=9)
+        
+        plt.colorbar(im, ax=ax4, label='Correlation')
+        
+        # 5. Time series with moving average
+        ax5 = fig.add_subplot(gs[1, 1])
+        window = 5
+        rolling_reward = df['total_reward'].rolling(window=window).mean()
+        
+        ax5.scatter(range(len(df)), df['total_reward'].to_numpy(), alpha=0.3, s=20, label='Raw')
+        ax5.plot(range(len(df)), rolling_reward.to_numpy(), 'r-', linewidth=2, 
+                label=f'{window}-Episode MA')
+        ax5.set_xlabel('Episode')
+        ax5.set_ylabel('Total Reward')
+        ax5.set_title('Reward Trend Analysis')
+        ax5.legend()
+        ax5.grid(True, alpha=0.3)
+        
+        # 6. Performance radar chart
+        ax6 = fig.add_subplot(gs[1, 2], projection='polar')
+        
+        categories = ['Success\nRate', 'Efficiency', 'Speed', 'Smoothness', 'Safety']
+        
+        # Normalize metrics to 0-1 scale
+        values = [
+            df['success'].mean(),
+            df['efficiency'].mean(),
+            1 - (df['steps'].mean() / df['steps'].max()),
+            1 - (df['path_smoothness'].mean() / df['path_smoothness'].max()),
+            1 - (df['jerk'].mean() / df['jerk'].max())
+        ]
+        
+        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+        
+        ax6.plot(angles, values, 'o-', linewidth=2, label='Agent Performance')
+        ax6.fill(angles, values, alpha=0.25)
+        ax6.set_xticks(angles[:-1])
+        ax6.set_xticklabels(categories)
+        ax6.set_ylim(0, 1)
+        ax6.set_title('Overall Performance Profile', pad=20)
+        ax6.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax6.grid(True)
+        
+        plt.suptitle('Comprehensive Performance Comparison', 
+                    fontsize=16, fontweight='bold', y=0.98)
+        
+        if save:
+            save_path = os.path.join(self.save_dir, 'performance_comparison.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f" Performance comparison saved to: {save_path}")
+        
+        plt.show()
+
+
+    def visualize_reward_breakdown(self, save=True):
+        # Detailed reward component analysis
+        if not self.reward_components:
+            print("No reward component data")
+            return
+        
+        fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+        fig.suptitle('Reward Component Breakdown Analysis', fontsize=16, fontweight='bold')
+        
+        component_names = list(self.reward_components.keys())
+        
+        for idx, comp_name in enumerate(component_names[:6]):
+            ax = axes[idx // 2, idx % 2]
+            data = self.reward_components[comp_name]
+            df = pd.DataFrame(data)
             
-            fig, axes = plt.subplots(3, 2, figsize=(16, 14))
-            fig.suptitle('Reward Component Breakdown Analysis', fontsize=16, fontweight='bold')
+            # Episode-wise mean
+            episode_means = df.groupby('episode')['value'].mean()
+            episode_std = df.groupby('episode')['value'].std()
             
-            component_names = list(self.reward_components.keys())
+            # Convert to numpy arrays for compatibility
+            x_vals = episode_means.index.to_numpy()
+            y_vals = episode_means.values
+            std_vals = episode_std.values
             
-            for idx, comp_name in enumerate(component_names[:6]):
-                ax = axes[idx // 2, idx % 2]
-                data = self.reward_components[comp_name]
-                df = pd.DataFrame(data)
-                
-                # Episode-wise mean
-                episode_means = df.groupby('episode')['value'].mean()
-                episode_std = df.groupby('episode')['value'].std()
-                
-                # Convert to numpy arrays for compatibility
-                x_vals = episode_means.index.to_numpy()
-                y_vals = episode_means.values
-                std_vals = episode_std.values
-                
-                # Plot with confidence interval
-                ax.plot(x_vals, y_vals, 
-                    marker='o', linewidth=2, markersize=4, label='Mean')
-                ax.fill_between(x_vals,
-                            y_vals - std_vals,
-                            y_vals + std_vals,
-                            alpha=0.3, label='Std Dev')
-                
-                ax.set_xlabel('Episode')
-                ax.set_ylabel('Value')
-                ax.set_title(f'{comp_name.replace("_", " ").title()}')
-                ax.grid(True, alpha=0.3)
-                ax.legend()
-                
-                # Add statistics
-                stats_text = f'Mean: {episode_means.mean():.3f}\nStd: {episode_means.std():.3f}'
-                ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
-                    verticalalignment='top',
-                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5),
-                    fontsize=8)
+            # Plot with confidence interval
+            ax.plot(x_vals, y_vals, 
+                marker='o', linewidth=2, markersize=4, label='Mean')
+            ax.fill_between(x_vals,
+                        y_vals - std_vals,
+                        y_vals + std_vals,
+                        alpha=0.3, label='Std Dev')
             
-            plt.tight_layout()
+            ax.set_xlabel('Episode')
+            ax.set_ylabel('Value')
+            ax.set_title(f'{comp_name.replace("_", " ").title()}')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
             
-            if save:
-                save_path = os.path.join(self.save_dir, 'reward_breakdown_analysis.png')
-                plt.savefig(save_path, dpi=300, bbox_inches='tight')
-                print(f" Reward breakdown saved to: {save_path}")
-            
-            plt.show()
+            # Add statistics
+            stats_text = f'Mean: {episode_means.mean():.3f}\nStd: {episode_means.std():.3f}'
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5),
+                fontsize=8)
+        
+        plt.tight_layout()
+        
+        if save:
+            save_path = os.path.join(self.save_dir, 'reward_breakdown_analysis.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f" Reward breakdown saved to: {save_path}")
+        
+        plt.show()
     
     
     def visualize_advanced_trajectories(self, save=True):
@@ -823,6 +942,10 @@ def test_with_performance_analysis(model_path, num_episodes=50, slow_motion=Fals
 
             print("  → Creating reward breakdown analysis...")
             analyzer.visualize_reward_breakdown(save=save_analysis)
+
+            print("  → Creating performance comparisons...")
+            analyzer.generate_comparison_plots(save=save_analysis)
+
 
                 
     except KeyboardInterrupt:
