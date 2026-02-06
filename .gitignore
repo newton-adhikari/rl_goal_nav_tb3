@@ -27,6 +27,7 @@ models_visual/
 logs_visual
 saved_models/
 checkpoints/
+comprehensive_report.json
 
 # RL logs
 runs/
