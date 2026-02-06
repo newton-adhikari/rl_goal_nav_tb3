@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from visualization_msgs.msg import Marker
 from gazebo_msgs.srv import SpawnEntity, DeleteEntity
 from rclpy.node import Node
+import time
 
 from rl_goal_nav_tb3.rl_goal_nav_tb3_env import RLGoalNavTB3Env
 
@@ -63,3 +64,134 @@ class EnhancedVisualMarkerPublisher(Node):
         for obs in self.moving_obstacles:
             obs.update()
             self.publish_obstacle_marker(obs)
+
+    def publish_obstacle_marker(self, obstacle):
+        # published rviz marker
+        # NOTE: doesn't work at this time
+        # TODO Fix this
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "moving_obstacles"
+
+        # TODO: use assigned id in place of obstacle.marker_id 
+        marker.id = obstacle.marker_id 
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        
+        marker.pose.position.x = float(obstacle.x)
+        marker.pose.position.y = float(obstacle.y)
+        marker.pose.position.z = 0.15
+        marker.pose.orientation.w = 1.0
+        
+        marker.scale.x = obstacle.radius * 2
+        marker.scale.y = obstacle.radius * 2
+        marker.scale.z = obstacle.radius * 2
+        
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 0.7
+        
+        marker.lifetime.sec = 1
+        
+        self.obstacle_pub.publish(marker)
+
+    def republish_marker(self):
+        if self.current_goal_pos is not None:
+            self.publish_rviz_marker(self.current_goal_pos[0], self.current_goal_pos[1])
+        self.update_obstacles()
+        
+    def spawn_goal_sphere(self, x, y, episode_num=0):
+        if self.marker_spawned and self.current_goal_name:
+            self.delete_goal_sphere()
+            time.sleep(0.2)
+        
+        self.current_goal_name = f"goal_sphere_ep{episode_num}"
+        self.current_goal_pos = [x, y]
+        
+        if not self.spawn_client.wait_for_service(timeout_sec=2.0):
+            self.get_logger().warn('Spawn service not available')
+            return False
+        
+        goal_sdf = f"""<?xml version="1.0"?>
+            <sdf version="1.6">
+            <model name="{self.current_goal_name}">
+                <static>true</static>
+                <pose>{x} {y} 0.15 0 0 0</pose>
+                <link name="link">
+                <visual name="visual">
+                    <geometry>
+                    <sphere>
+                        <radius>0.25</radius>
+                    </sphere>
+                    </geometry>
+                    <material>
+                    <ambient>0 1 0 1</ambient>
+                    <diffuse>0 1 0 1</diffuse>
+                    <specular>0.5 1 0.5 1</specular>
+                    <emissive>0 0.8 0 1</emissive>
+                    </material>
+                </visual>
+                </link>
+            </model>
+            </sdf>"""
+        
+        request = SpawnEntity.Request()
+        request.name = self.current_goal_name
+        request.xml = goal_sdf
+        
+        future = self.spawn_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
+        
+        if future.result() is not None:
+            self.marker_spawned = True
+            print(f"🟢 GREEN GOAL SPHERE spawned at ({x:.2f}, {y:.2f})")
+            return True
+        else:
+            self.get_logger().error(f"Failed to spawn goal sphere")
+            return False
+        
+    def delete_goal_sphere(self):
+        if not self.current_goal_name:
+            return
+            
+        if not self.delete_client.wait_for_service(timeout_sec=1.0):
+            return
+            
+        request = DeleteEntity.Request()
+        request.name = self.current_goal_name
+        
+        future = self.delete_client.call_async(request)
+        rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
+        
+        self.marker_spawned = False
+        self.current_goal_name = None
+        self.current_goal_pos = None
+        
+    def publish_rviz_marker(self, x, y):
+        marker = Marker()
+        marker.header.frame_id = "odom"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "goal"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        
+        marker.pose.position.x = float(x)
+        marker.pose.position.y = float(y)
+        marker.pose.position.z = 0.15
+        marker.pose.orientation.w = 1.0
+        
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.5
+        
+        marker.color.r = 0.0
+        marker.color.g = 1.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+        
+        marker.lifetime.sec = 1
+        
+        self.marker_pub.publish(marker)
