@@ -35,6 +35,8 @@ This project implements reinforcement for goal-directed navigation in obstacle-f
 - **Average Time to Goal**: 9.95 ± 3.52 seconds
 - **Training Timesteps**: 300,000 (stable performance)
 
+### Demo GIF
+
 ![Robot Navigation Demo](/src/rl_goal_nav_tb3/scripts/performance_analysis/videos/rollout_episode_0.gif)
 
 *Trained agent successfully navigating to goal positions in real-time*
