@@ -288,6 +288,63 @@ class PerformanceAnalyzer:
             'q_values': q_values
         })
 
+    def visualize_attention_saliency(self, episode_idx=0, num_frames=9, save=True):
+        # Visualize attention and saliency maps"""
+        episode_attention = [a for a in self.attention_maps if a['episode'] == episode_idx]
+        
+        if not episode_attention:
+            print(f"No attention data for episode {episode_idx}")
+            return
+        
+        fig = plt.figure(figsize=(20, 12))
+        gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.3)
+        
+        # Sample frames across episode
+        indices = np.linspace(0, len(episode_attention)-1, num_frames, dtype=int)
+        
+        for idx, frame_idx in enumerate(indices):
+            data = episode_attention[frame_idx]
+            
+            # Polar plot with attention
+            ax_polar = plt.subplot(gs[idx // 3, idx % 3], projection='polar')
+            
+            angles = np.linspace(0, 2*np.pi, 24, endpoint=False)
+            # Converted back to numpy arrays
+            scan = np.array(data['scan_data'])
+            attention = np.array(data['attention_weights'])
+            position = np.array(data['position'])
+            goal_position = np.array(data['goal_position'])
+            
+            # Plot distance readings
+            ax_polar.plot(angles, scan, 'b-', linewidth=2.5, label='LiDAR', alpha=0.7)
+            ax_polar.fill_between(angles, 0, scan, color='blue', alpha=0.1)
+            
+            # Plot attention overlay
+            attention_scaled = attention * 3  # Scale for visibility
+            ax_polar.fill(angles, attention_scaled, 'r', alpha=0.4, label='Attention')
+            ax_polar.plot(angles, attention_scaled, 'r-', linewidth=2)
+            
+            # Highlight max attention direction
+            max_idx = np.argmax(attention)
+            ax_polar.plot([angles[max_idx], angles[max_idx]], [0, 3.5], 
+                         'g--', linewidth=2, label='Focus')
+            
+            ax_polar.set_ylim(0, 3.5)
+            ax_polar.set_title(f'Step {data["step"]}\nDist to Goal: {np.linalg.norm(position - goal_position):.2f}m',
+                             fontsize=10)
+            ax_polar.legend(loc='upper right', fontsize=8)
+            ax_polar.set_theta_zero_location('N')
+            
+        plt.suptitle(f'Attention & Saliency Analysis - Episode {episode_idx}', 
+                    fontsize=16, fontweight='bold')
+        
+        if save:
+            save_path = os.path.join(self.save_dir, 'attention_maps', f'attention_episode_{episode_idx}.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f" Attention visualization saved to: {save_path}")
+        
+        plt.show()
+
     def visualize_advanced_trajectories(self, save=True):
         # Advanced trajectory visualization with heatmaps
         fig = plt.figure(figsize=(20, 12))
@@ -704,6 +761,10 @@ def test_with_performance_analysis(model_path, num_episodes=50, slow_motion=Fals
         if visualize:            
             print("  → Creating advanced trajectory analysis...")
             analyzer.visualize_advanced_trajectories(save=save_analysis)
+
+            print("  → Creating attention/saliency visualizations...")
+            analyzer.visualize_attention_saliency(episode_idx=0, save=save_analysis)
+
                 
     except KeyboardInterrupt:
         print("\n⚠️  Evaluation interrupted by user")
