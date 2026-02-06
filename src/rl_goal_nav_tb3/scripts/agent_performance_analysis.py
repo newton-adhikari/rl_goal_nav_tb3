@@ -51,3 +51,15 @@ class EnhancedVisualMarkerPublisher(Node):
 
         # NOTE: Started from 100 to avoid conflicts
         self.obstacle_id_counter = 100
+
+    def add_moving_obstacle(self, obstacle):
+        # actual moving obstacle added
+        obstacle.marker_id = self.obstacle_id_counter
+        self.obstacle_id_counter += 1
+        self.moving_obstacles.append(obstacle)
+        
+    def update_obstacles(self):
+        # update all the moving obstacles
+        for obs in self.moving_obstacles:
+            obs.update()
+            self.publish_obstacle_marker(obs)
