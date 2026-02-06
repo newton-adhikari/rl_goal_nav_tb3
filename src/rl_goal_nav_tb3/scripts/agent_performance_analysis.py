@@ -216,4 +216,71 @@ class PerformanceAnalyzer:
         self.reward_components = defaultdict(list)
         self.attention_maps = []
         self.policy_rollouts = []
-        self.comparison_data = defaultdict(list)
+    
+    def record_episode(self, episode_num, trajectory, goal_pos, success, total_reward, steps, obstacles=None):
+        # Record complete episode data
+        # Convert trajectory to list for JSON serialization
+        trajectory_list = [pos.tolist() if hasattr(pos, 'tolist') else list(pos) for pos in trajectory]
+        
+        self.episode_data.append({
+            'episode': episode_num,
+            'success': success,
+            'total_reward': total_reward,
+            'steps': steps,
+            'goal_x': goal_pos[0],
+            'goal_y': goal_pos[1],
+            'trajectory': trajectory_list,
+            'efficiency': self._calculate_efficiency(trajectory, goal_pos),
+            'path_smoothness': self._calculate_smoothness(trajectory),
+            'jerk': self._calculate_jerk(trajectory),
+            'time_to_goal': steps * 0.05,
+            'clearance': self._calculate_min_clearance(trajectory, obstacles) if obstacles else None,
+            'energy_consumption': self._estimate_energy(trajectory)
+        })
+
+
+    def record_step(self, episode, step, state, action, reward, info):
+        # Record individual step data(turned out to be useful)
+        self.step_data.append({
+            'episode': episode,
+            'step': step,
+            'distance_to_goal': info.get('goal_distance', 0),
+            'min_obstacle_dist': info.get('min_obstacle_distance', 0),
+            'linear_vel': action[0],
+            'angular_vel': action[1],
+            'reward': reward,
+            'timestamp': step * 0.05
+        })
+
+    def record_reward_components(self, episode, step, components):
+        # Record individual reward components
+        for key, value in components.items():
+            self.reward_components[key].append({
+                'episode': episode,
+                'step': step,
+                'value': value
+            })
+
+    def record_attention(self, episode, step, scan_data, position, goal_pos):
+        # Record attention data
+        self.attention_maps.append({
+            'episode': episode,
+            'step': step,
+            'scan_data': scan_data.tolist() if hasattr(scan_data, 'tolist') else list(scan_data),
+            'position': position.tolist() if hasattr(position, 'tolist') else list(position),
+            'goal_position': goal_pos.tolist() if hasattr(goal_pos, 'tolist') else list(goal_pos),
+            'attention_weights': self._compute_attention_weights(scan_data).tolist(),
+            'saliency_map': self._compute_saliency_map(scan_data, position, goal_pos).tolist()
+        })
+
+    def record_policy_rollout(self, episode, step, state, action, q_values=None):
+        # this is policy decisions, very important for analysis
+        self.policy_rollouts.append({
+            'episode': episode,
+            'step': step,
+            'state': state.copy() if hasattr(state, 'copy') else state,
+            'action': action.copy() if hasattr(action, 'copy') else action,
+            'q_values': q_values
+        })
+
+    
