@@ -345,6 +345,94 @@ class PerformanceAnalyzer:
         
         plt.show()
 
+
+    def create_policy_rollout_video(self, episode_idx=0, fps=20, save=True):
+        # Create video of policy rollout
+        episode_data = [e for e in self.episode_data if e['episode'] == episode_idx]
+        if not episode_data:
+            print(f"No data for episode {episode_idx}")
+            return
+        
+        ep_data = episode_data[0]
+        trajectory = np.array(ep_data['trajectory'])
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+        
+        # Setup trajectory plot
+        ax1.set_xlim(-2.5, 2.5)
+        ax1.set_ylim(-2.5, 2.5)
+        ax1.set_aspect('equal')
+        ax1.grid(True, alpha=0.3)
+        ax1.set_title('Robot Trajectory')
+        ax1.set_xlabel('X Position (m)')
+        ax1.set_ylabel('Y Position (m)')
+        
+        # Goal marker
+        goal_circle = Circle((ep_data['goal_x'], ep_data['goal_y']), 
+                            0.3, color='gold', alpha=0.6, zorder=5)
+        ax1.add_patch(goal_circle)
+        
+        # Robot marker
+        robot, = ax1.plot([], [], 'ro', markersize=15, zorder=10)
+        path_line, = ax1.plot([], [], 'b-', linewidth=2, alpha=0.7)
+        
+        # Info text
+        info_text = ax1.text(0.02, 0.98, '', transform=ax1.transAxes,
+                            verticalalignment='top',
+                            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                            fontsize=10)
+        
+        # Setup metrics plot
+        ax2.set_xlim(0, len(trajectory))
+        ax2.set_ylim(0, max(5, np.linalg.norm(trajectory - np.array([ep_data['goal_x'], ep_data['goal_y']]), axis=1).max()))
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('Distance to Goal (m)')
+        ax2.set_title('Progress Metrics')
+        ax2.grid(True, alpha=0.3)
+        
+        distance_line, = ax2.plot([], [], 'g-', linewidth=2, label='Distance to Goal')
+        ax2.legend()
+        
+        def init():
+            robot.set_data([], [])
+            path_line.set_data([], [])
+            distance_line.set_data([], [])
+            info_text.set_text('')
+            return robot, path_line, distance_line, info_text
+        
+        # was very hard to get this right
+        def animate(frame):
+            # Update robot position
+            robot.set_data([trajectory[frame, 0]], [trajectory[frame, 1]])
+            
+            # Update path
+            path_line.set_data(trajectory[:frame+1, 0], trajectory[:frame+1, 1])
+            
+            # Update distance plot
+            distances = np.linalg.norm(trajectory[:frame+1] - np.array([ep_data['goal_x'], ep_data['goal_y']]), axis=1)
+            distance_line.set_data(range(frame+1), distances)
+            
+            # Update info
+            dist_to_goal = np.linalg.norm(trajectory[frame] - np.array([ep_data['goal_x'], ep_data['goal_y']]))
+            info_text.set_text(f'Step: {frame}/{len(trajectory)}\n'
+                             f'Distance: {dist_to_goal:.2f}m\n'
+                             f'Position: ({trajectory[frame, 0]:.2f}, {trajectory[frame, 1]:.2f})')
+            
+            return robot, path_line, distance_line, info_text
+        
+        anim = FuncAnimation(fig, animate, init_func=init, 
+                           frames=len(trajectory), interval=1000//fps, 
+                           blit=True, repeat=True)
+        
+        if save:
+            video_path = os.path.join(self.save_dir, 'videos', f'rollout_episode_{episode_idx}.gif')
+            writer = PillowWriter(fps=fps)
+            anim.save(video_path, writer=writer)
+            print(f" Policy rollout video saved to: {video_path}")
+        
+        plt.show()
+    
+
     def generate_comparison_plots(self, save=True):
         # Generate comparison plots for final report
         df = pd.DataFrame(self.episode_data)
@@ -945,6 +1033,9 @@ def test_with_performance_analysis(model_path, num_episodes=50, slow_motion=Fals
 
             print("  → Creating performance comparisons...")
             analyzer.generate_comparison_plots(save=save_analysis)
+
+            print("  → Creating policy rollout video...")
+            analyzer.create_policy_rollout_video(episode_idx=0, fps=20, save=save_analysis)
 
 
                 
