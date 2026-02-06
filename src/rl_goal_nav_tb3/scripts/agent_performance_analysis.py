@@ -2,6 +2,9 @@
 import rclpy
 import numpy as np
 import matplotlib.pyplot as plt
+from visualization_msgs.msg import Marker
+from gazebo_msgs.srv import SpawnEntity, DeleteEntity
+from rclpy.node import Node
 
 from rl_goal_nav_tb3.rl_goal_nav_tb3_env import RLGoalNavTB3Env
 
@@ -30,3 +33,21 @@ class MovingObstacle:
     
     def get_position(self):
         return np.array([self.x, self.y])
+    
+class EnhancedVisualMarkerPublisher(Node):
+    def __init__(self):
+        super().__init__('enhanced_visual_marker_publisher')
+        self.marker_pub = self.create_publisher(Marker, '/goal_marker', 10)
+        self.obstacle_pub = self.create_publisher(Marker, '/moving_obstacles', 10)
+        self.spawn_client = self.create_client(SpawnEntity, '/spawn_entity')
+        self.delete_client = self.create_client(DeleteEntity, '/delete_entity')
+        self.marker_spawned = False
+        self.current_goal_name = None
+        self.obstacle_entities = []
+        
+        self.marker_timer = self.create_timer(0.1, self.republish_marker)
+        self.current_goal_pos = None
+        self.moving_obstacles = []
+
+        # NOTE: Started from 100 to avoid conflicts
+        self.obstacle_id_counter = 100
