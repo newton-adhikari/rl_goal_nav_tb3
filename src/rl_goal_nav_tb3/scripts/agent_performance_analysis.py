@@ -345,6 +345,62 @@ class PerformanceAnalyzer:
         
         plt.show()
 
+        def visualize_reward_breakdown(self, save=True):
+            # Detailed reward component analysis
+            if not self.reward_components:
+                print("No reward component data")
+                return
+            
+            fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+            fig.suptitle('Reward Component Breakdown Analysis', fontsize=16, fontweight='bold')
+            
+            component_names = list(self.reward_components.keys())
+            
+            for idx, comp_name in enumerate(component_names[:6]):
+                ax = axes[idx // 2, idx % 2]
+                data = self.reward_components[comp_name]
+                df = pd.DataFrame(data)
+                
+                # Episode-wise mean
+                episode_means = df.groupby('episode')['value'].mean()
+                episode_std = df.groupby('episode')['value'].std()
+                
+                # Convert to numpy arrays for compatibility
+                x_vals = episode_means.index.to_numpy()
+                y_vals = episode_means.values
+                std_vals = episode_std.values
+                
+                # Plot with confidence interval
+                ax.plot(x_vals, y_vals, 
+                    marker='o', linewidth=2, markersize=4, label='Mean')
+                ax.fill_between(x_vals,
+                            y_vals - std_vals,
+                            y_vals + std_vals,
+                            alpha=0.3, label='Std Dev')
+                
+                ax.set_xlabel('Episode')
+                ax.set_ylabel('Value')
+                ax.set_title(f'{comp_name.replace("_", " ").title()}')
+                ax.grid(True, alpha=0.3)
+                ax.legend()
+                
+                # Add statistics
+                stats_text = f'Mean: {episode_means.mean():.3f}\nStd: {episode_means.std():.3f}'
+                ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+                    verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.5),
+                    fontsize=8)
+            
+            plt.tight_layout()
+            
+            if save:
+                save_path = os.path.join(self.save_dir, 'reward_breakdown_analysis.png')
+                plt.savefig(save_path, dpi=300, bbox_inches='tight')
+                print(f" Reward breakdown saved to: {save_path}")
+            
+            plt.show()
+    
+    
     def visualize_advanced_trajectories(self, save=True):
         # Advanced trajectory visualization with heatmaps
         fig = plt.figure(figsize=(20, 12))
@@ -764,6 +820,9 @@ def test_with_performance_analysis(model_path, num_episodes=50, slow_motion=Fals
 
             print("  → Creating attention/saliency visualizations...")
             analyzer.visualize_attention_saliency(episode_idx=0, save=save_analysis)
+
+            print("  → Creating reward breakdown analysis...")
+            analyzer.visualize_reward_breakdown(save=save_analysis)
 
                 
     except KeyboardInterrupt:
