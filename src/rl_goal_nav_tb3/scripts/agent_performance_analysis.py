@@ -10,6 +10,11 @@ import os
 import json
 from datetime import datetime
 from collections import defaultdict
+import pandas as pd
+from scipy.ndimage import gaussian_filter
+from matplotlib.patches import Circle
+from matplotlib.animation import FuncAnimation, PillowWriter
+from stable_baselines3 import PPO, SAC
 
 from rl_goal_nav_tb3.rl_goal_nav_tb3_env import RLGoalNavTB3Env
 
@@ -283,4 +288,444 @@ class PerformanceAnalyzer:
             'q_values': q_values
         })
 
+    def visualize_advanced_trajectories(self, save=True):
+        # Advanced trajectory visualization with heatmaps
+        fig = plt.figure(figsize=(20, 12))
+        gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+        
+        # 1. All Trajectories with Success/Failure
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.set_title('All Trajectories (Success vs Failure)', fontsize=14, fontweight='bold')
+        ax1.set_xlabel('X Position (m)')
+        ax1.set_ylabel('Y Position (m)')
+        ax1.grid(True, alpha=0.3)
+        ax1.set_aspect('equal')
+        
+        for ep_data in self.episode_data:
+            trajectory = ep_data['trajectory']
+            if len(trajectory) > 0:
+                traj_array = np.array(trajectory)
+                color = 'green' if ep_data['success'] else 'red'
+                alpha = 0.4
+                linewidth = 2 if ep_data['success'] else 1
+                
+                ax1.plot(traj_array[:, 0], traj_array[:, 1], 
+                        color=color, alpha=alpha, linewidth=linewidth)
+                
+                # Marked goal
+                ax1.add_patch(Circle((ep_data['goal_x'], ep_data['goal_y']), 
+                                    0.3, color='gold', alpha=0.6, zorder=10))
+        
+        ax1.plot([], [], 'g-', linewidth=2, label=f"Success ({sum(e['success'] for e in self.episode_data)})")
+        ax1.plot([], [], 'r-', linewidth=1, label=f"Failure ({sum(not e['success'] for e in self.episode_data)})")
+        ax1.legend(loc='upper right')
+        
+        # 2. Trajectory Density Heatmap
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.set_title('Trajectory Density Heatmap', fontsize=14, fontweight='bold')
+        
+        # Create density map with fixed bins
+        x_bins = np.linspace(-2.5, 2.5, 101)  # NOTE: Used 101 edges for 100 bins
+        y_bins = np.linspace(-2.5, 2.5, 101)
+        density = np.zeros((100, 100))
+        
+        for ep_data in self.episode_data:
+            trajectory = np.array(ep_data['trajectory'])
+            if len(trajectory) > 0:
+                H, _, _ = np.histogram2d(trajectory[:, 0], trajectory[:, 1], 
+                                         bins=[x_bins, y_bins])
+                
+                # NOTE: Need to fix here, H needs to be valid before adding
+                if H.shape == (100, 100):
+                    density += H.T
+        
+        # Only plot if we have data
+        if density.max() > 0:
+            im = ax2.imshow(density, extent=[-2.5, 2.5, -2.5, 2.5], 
+                           origin='lower', cmap='hot', alpha=0.7)
+            plt.colorbar(im, ax=ax2, label='Visit Frequency')
+        ax2.set_xlabel('X Position (m)')
+        ax2.set_ylabel('Y Position (m)')
+        
+        # 3. Efficiency vs Steps
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.set_title('Efficiency vs Steps Taken', fontsize=14, fontweight='bold')
+        
+        df = pd.DataFrame(self.episode_data)
+        colors = ['green' if s else 'red' for s in df['success']]
+        ax3.scatter(df['steps'].to_numpy(), df['efficiency'].to_numpy(), c=colors, alpha=0.6, s=100)
+        ax3.set_xlabel('Steps Taken')
+        ax3.set_ylabel('Path Efficiency')
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. Best Trajectory
+        ax4 = fig.add_subplot(gs[1, 0])
+        ax4.set_title('Best Trajectory (Highest Efficiency)', fontsize=14, fontweight='bold')
+        
+        best_idx = df['efficiency'].idxmax()
+        best_ep = self.episode_data[best_idx]
+        traj = np.array(best_ep['trajectory'])
+        
+        ax4.plot(traj[:, 0], traj[:, 1], 'b-', linewidth=3, label='Path')
+        ax4.plot(traj[0, 0], traj[0, 1], 'go', markersize=15, label='Start')
+        ax4.add_patch(Circle((best_ep['goal_x'], best_ep['goal_y']), 
+                            0.3, color='gold', label='Goal'))
+        ax4.set_xlabel('X Position (m)')
+        ax4.set_ylabel('Y Position (m)')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+        ax4.set_aspect('equal')
+        ax4.text(0.05, 0.95, f"Efficiency: {best_ep['efficiency']:.3f}\nSteps: {best_ep['steps']}", 
+                transform=ax4.transAxes, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        
+        # 5. Time Series Analysis
+        ax5 = fig.add_subplot(gs[1, 1])
+        ax5.set_title('Performance Over Episodes', fontsize=14, fontweight='bold')
+        
+        episodes = range(len(df))
+        ax5_twin = ax5.twinx()
+        
+        # Converted to numpy arrays just for compatibility
+        efficiency_vals = df['efficiency'].to_numpy()
+        reward_vals = df['total_reward'].to_numpy()
+        
+        line1 = ax5.plot(episodes, efficiency_vals, 'b-', label='Efficiency', linewidth=2)
+        line2 = ax5_twin.plot(episodes, reward_vals, 'r-', label='Reward', linewidth=2)
+        
+        ax5.set_xlabel('Episode')
+        ax5.set_ylabel('Efficiency', color='b')
+        ax5_twin.set_ylabel('Total Reward', color='r')
+        ax5.tick_params(axis='y', labelcolor='b')
+        ax5_twin.tick_params(axis='y', labelcolor='r')
+        
+        lines = line1 + line2
+        labels = [l.get_label() for l in lines]
+        ax5.legend(lines, labels, loc='upper left')
+        ax5.grid(True, alpha=0.3)
+        
+        # 6. Success Rate Distribution
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.set_title('Performance Metrics Distribution', fontsize=14, fontweight='bold')
+        
+        metrics = ['Efficiency', 'Smoothness', 'Energy']
+        values = [
+            df['efficiency'].mean(),
+            1 - df['path_smoothness'].mean(),  # NOTE: Inverted for better visualization
+            1 - (df['energy_consumption'].mean() / df['energy_consumption'].max())
+        ]
+        
+        bars = ax6.bar(metrics, values, color=['#2ecc71', '#3498db', '#e74c3c'], alpha=0.7)
+        ax6.set_ylabel('Normalized Score')
+        ax6.set_ylim(0, 1)
+        ax6.grid(True, alpha=0.3, axis='y')
+        
+        # Add value labels on bars
+        for bar, val in zip(bars, values):
+            height = bar.get_height()
+            ax6.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{val:.3f}', ha='center', va='bottom')
+        
+        plt.suptitle('Comprehensive Trajectory Analysis for Final Report', 
+                    fontsize=16, fontweight='bold', y=0.98)
+        
+        if save:
+            save_path = os.path.join(self.save_dir, 'trajectories', 'advanced_trajectory_analysis.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f" Advanced trajectory analysis saved to: {save_path}")
+        
+        plt.show()
+        # Generate comparison plots for final report
+        df = pd.DataFrame(self.episode_data)
+        
+        fig = plt.figure(figsize=(18, 10))
+        gs = fig.add_gridspec(2, 3, hspace=0.3, wspace=0.3)
+        
+        # 1. Success Rate by Episode Batch
+        ax1 = fig.add_subplot(gs[0, 0])
+        batch_size = 10
+        batches = [df[i:i+batch_size]['success'].mean() * 100 
+                  for i in range(0, len(df), batch_size)]
+        ax1.bar(range(len(batches)), batches, color='#3498db', alpha=0.7)
+        ax1.axhline(df['success'].mean() * 100, color='r', linestyle='--', 
+                   linewidth=2, label=f'Overall: {df["success"].mean()*100:.1f}%')
+        ax1.set_xlabel('Episode Batch')
+        ax1.set_ylabel('Success Rate (%)')
+        ax1.set_title('Success Rate Evolution')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3, axis='y')
+        
+        # 2. Efficiency Distribution
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.hist(df[df['success']]['efficiency'].to_numpy(), bins=20, alpha=0.7, 
+                color='green', label='Success', edgecolor='black')
+        ax2.hist(df[~df['success']]['efficiency'].to_numpy(), bins=20, alpha=0.7, 
+                color='red', label='Failure', edgecolor='black')
+        ax2.set_xlabel('Path Efficiency')
+        ax2.set_ylabel('Frequency')
+        ax2.set_title('Efficiency Distribution')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3, axis='y')
+        
+        # 3. Box plots comparison
+        ax3 = fig.add_subplot(gs[0, 2])
+        success_steps = df[df['success']]['steps'].values
+        fail_steps = df[~df['success']]['steps'].values
+        
+        box_data = [success_steps, fail_steps]
+        bp = ax3.boxplot(box_data, labels=['Success', 'Failure'],
+                        patch_artist=True,
+                        boxprops=dict(facecolor='lightblue', alpha=0.7),
+                        medianprops=dict(color='red', linewidth=2))
+        ax3.set_ylabel('Steps Taken')
+        ax3.set_title('Steps Distribution')
+        ax3.grid(True, alpha=0.3, axis='y')
+        
+        # 4. Correlation heatmap
+        ax4 = fig.add_subplot(gs[1, 0])
+        corr_cols = ['efficiency', 'steps', 'total_reward', 'path_smoothness', 'jerk']
+        corr_matrix = df[corr_cols].corr()
+        
+        im = ax4.imshow(corr_matrix, cmap='coolwarm', aspect='auto', vmin=-1, vmax=1)
+        ax4.set_xticks(range(len(corr_cols)))
+        ax4.set_yticks(range(len(corr_cols)))
+        ax4.set_xticklabels([c.replace('_', '\n') for c in corr_cols], rotation=45)
+        ax4.set_yticklabels([c.replace('_', ' ').title() for c in corr_cols])
+        ax4.set_title('Metric Correlations')
+        
+        # Add correlation values
+        for i in range(len(corr_cols)):
+            for j in range(len(corr_cols)):
+                text = ax4.text(j, i, f'{corr_matrix.iloc[i, j]:.2f}',
+                              ha="center", va="center", color="black", fontsize=9)
+        
+        plt.colorbar(im, ax=ax4, label='Correlation')
+        
+        # 5. Time series with moving average
+        ax5 = fig.add_subplot(gs[1, 1])
+        window = 5
+        rolling_reward = df['total_reward'].rolling(window=window).mean()
+        
+        ax5.scatter(range(len(df)), df['total_reward'].to_numpy(), alpha=0.3, s=20, label='Raw')
+        ax5.plot(range(len(df)), rolling_reward.to_numpy(), 'r-', linewidth=2, 
+                label=f'{window}-Episode MA')
+        ax5.set_xlabel('Episode')
+        ax5.set_ylabel('Total Reward')
+        ax5.set_title('Reward Trend Analysis')
+        ax5.legend()
+        ax5.grid(True, alpha=0.3)
+        
+        # 6. Performance radar chart
+        ax6 = fig.add_subplot(gs[1, 2], projection='polar')
+        
+        categories = ['Success\nRate', 'Efficiency', 'Speed', 'Smoothness', 'Safety']
+        
+        # Normalize metrics to 0-1 scale
+        values = [
+            df['success'].mean(),
+            df['efficiency'].mean(),
+            1 - (df['steps'].mean() / df['steps'].max()),
+            1 - (df['path_smoothness'].mean() / df['path_smoothness'].max()),
+            1 - (df['jerk'].mean() / df['jerk'].max())
+        ]
+        
+        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+        
+        ax6.plot(angles, values, 'o-', linewidth=2, label='Agent Performance')
+        ax6.fill(angles, values, alpha=0.25)
+        ax6.set_xticks(angles[:-1])
+        ax6.set_xticklabels(categories)
+        ax6.set_ylim(0, 1)
+        ax6.set_title('Overall Performance Profile', pad=20)
+        ax6.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+        ax6.grid(True)
+        
+        plt.suptitle('Comprehensive Performance Comparison', 
+                    fontsize=16, fontweight='bold', y=0.98)
+        
+        if save:
+            save_path = os.path.join(self.save_dir, 'performance_comparison.png')
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f" Performance comparison saved to: {save_path}")
+        
+        plt.show()
+
+
+def load_model(model_path):
+    # Load trained model[using PPO]
+    try:
+        return PPO.load(model_path)
+    except:
+        try:
+            return SAC.load(model_path)
+        except Exception as e:
+            raise Exception(f"Failed to load model: {e}") 
+        
+
+def decompose_reward(env, obs, action, next_obs, info):
+    # Decompose reward into components
+    components = {}
     
+    goal_distance = info.get('goal_distance', 0)
+    prev_dist = getattr(env, '_prev_goal_dist', goal_distance)
+    
+    components['distance_reward'] = (prev_dist - goal_distance) * 50.0
+    components['forward_bonus'] = 2.0 if action[0] > 0.05 else -1.0
+    components['angular_penalty'] = -abs(action[1]) * 0.1
+    components['proximity_reward'] = 10.0 if goal_distance < 0.5 else (5.0 if goal_distance < 1.0 else 0.0)
+    components['time_penalty'] = -0.01
+    
+    if goal_distance < env.goal_threshold:
+        components['goal_bonus'] = 500.0
+    else:
+        components['goal_bonus'] = 0.0
+    
+    if np.min(env.scan_data) < env.collision_threshold:
+        components['collision_penalty'] = -100.0
+    else:
+        components['collision_penalty'] = 0.0
+    
+    env._prev_goal_dist = goal_distance
+    
+    return components
+
+
+
+
+def test_with_performance_analysis(model_path, num_episodes=50, slow_motion=False, 
+                              save_analysis=True, visualize=True, use_moving_obstacles=False):
+   # Final Report evaluation start>>>>>
+    
+    rclpy.init()
+    
+    print(f"Loading model from {model_path}")
+    model = load_model(model_path)
+    
+    env = RLGoalNavTB3Env()
+    marker_pub = EnhancedVisualMarkerPublisher()
+    analyzer = PerformanceAnalyzer()
+    
+    print("\n" + "="*100)
+    print(" " * 20 + "FINAL REPORT EVALUATION")
+    print("="*100)
+
+    if use_moving_obstacles:
+        print(" ### Dynamic Moving Obstacles ###")
+    print("="*100 + "\n")
+    
+    # Setup moving obstacles [Hardcoded]
+    obstacles = []
+    if use_moving_obstacles:
+        obstacles = [
+            MovingObstacle(1.0, 1.0, 0.2, 0.15),
+            MovingObstacle(-1.0, -1.0, -0.15, 0.2),
+            MovingObstacle(0.5, -1.5, 0.1, -0.1)
+        ]
+        for obs in obstacles:
+            marker_pub.add_moving_obstacle(obs)
+        print(f" Added {len(obstacles)} moving obstacles")
+    
+    try:
+        for episode in range(num_episodes):
+            print(f"\n{'='*100}")
+            print(f"Episode {episode + 1}/{num_episodes}")
+            print('='*100)
+            
+            obs, _ = env.reset()
+            
+            goal_x = float(env.goal_position[0])
+            goal_y = float(env.goal_position[1])
+            marker_pub.spawn_goal_sphere(goal_x, goal_y, episode_num=episode)
+            
+            print(f" Goal: ({goal_x:.2f}, {goal_y:.2f})")
+            print(f" Start: (0.00, 0.00)")
+            print(f" Initial Distance: {np.linalg.norm(env.goal_position - env.position):.2f}m\n")
+            
+            done = False
+            truncated = False
+            episode_reward = 0
+            steps = 0
+            trajectory = []
+            
+            while not done and not truncated:
+                trajectory.append(env.position.copy())
+                
+                action, _ = model.predict(obs, deterministic=True)
+                
+                rclpy.spin_once(env, timeout_sec=0.01)
+                rclpy.spin_once(marker_pub, timeout_sec=0.01)
+                
+                next_obs, reward, done, truncated, info = env.step(action)
+                
+                # Record comprehensive data
+                analyzer.record_step(episode, steps, obs, action, reward, info)
+                analyzer.record_attention(episode, steps, env.scan_data, env.position, env.goal_position)
+                analyzer.record_policy_rollout(episode, steps, obs, action)
+                
+                reward_components = decompose_reward(env, obs, action, next_obs, info)
+                analyzer.record_reward_components(episode, steps, reward_components)
+                
+                episode_reward += reward
+                steps += 1
+                obs = next_obs
+                
+                if steps % 25 == 0:
+                    distance = info.get('goal_distance', 0)
+                    min_obs_dist = np.min(env.scan_data)
+                    print(f"  Step {steps}: Distance = {distance:.3f}m, Min Obstacle Dist = {min_obs_dist:.3f}m, Reward = {reward:.2f}")
+                
+                time.sleep(0.05 if slow_motion else 0.01)
+            
+            success = info.get('success', info.get('goal_distance', 1.0) < env.goal_threshold)
+            
+            analyzer.record_episode(episode, trajectory, env.goal_position.tolist(), 
+                                   success, episode_reward, steps, obstacles)
+            
+            print(f"\n{'='*100}")
+            if success:
+                print(f"!!SUCCESS!!")
+            else:
+                print(f"✗ FAILED ")
+            print(f"  Total Steps: {steps}")
+            print(f"  Total Reward: {episode_reward:.2f}")
+            print(f"  Final Distance: {info.get('goal_distance', 0):.3f}m")
+            print(f"  Path Efficiency: {analyzer.episode_data[-1]['efficiency']:.3f}")
+            print('='*100)
+            
+            time.sleep(0.5)
+        
+        # Generate analysis
+        print("\n" + "="*100)
+        print(" " * 30 + "GENERATING ANALYSIS")
+        print("="*100)
+                
+        if visualize:            
+            print("  → Creating advanced trajectory analysis...")
+            analyzer.visualize_advanced_trajectories(save=save_analysis)
+                
+    except KeyboardInterrupt:
+        print("\n⚠️  Evaluation interrupted by user")
+        
+    finally:
+        marker_pub.delete_goal_sphere()
+        env.close()
+        marker_pub.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    import sys
+    
+    # Even I get confused how to use this sometimes, haha
+    if len(sys.argv) < 2:
+        print("Usage: python3 test_agent_enhanced.py <model_path> [num_episodes] [options]")
+        sys.exit(1)
+    
+    model_path = sys.argv[1]
+    num_episodes = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 50
+    
+    test_with_performance_analysis(model_path, num_episodes, False, 
+                              save_analysis=True, visualize=True,
+                              use_moving_obstacles=False)
