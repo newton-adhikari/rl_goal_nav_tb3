@@ -5,6 +5,10 @@ The agent is trained(TurtleBot3) in an empty  world in gazebo where random goal 
 
 The focus of this project is goal-directed navigation using reinforcement learning, without obstacles, to establish a strong baseline policy. This project achieves **92% success rate** with efficient, smooth trajectories using only LIDAR-based perception and goal-relative state representation.
 
+[![ROS2 Humble](https://img.shields.io/badge/ROS2-Humble-blue)](https://docs.ros.org/en/humble/)
+[![Gazebo Classic](https://img.shields.io/badge/Gazebo-Classic%2011-orange)](https://classic.gazebosim.org/)
+[![Python](https://img.shields.io/badge/Python-3.10-green)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 ## Table of Contents
 
